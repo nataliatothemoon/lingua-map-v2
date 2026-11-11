@@ -35,3 +35,27 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+html {
+  scroll-behavior: smooth;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  section,
+  article {
+    break-inside: avoid-page;
+    box-shadow: none !important;
+  }
+}

@@ -57,6 +57,62 @@ export type PatternFinding = {
   citations: string[];
 };
 
+export type PatternRole = "root" | "branch" | "trigger" | "vulnerability";
+
+export type EvidenceSource = "tongue" | "intake" | "followup";
+
+export type TraditionalTreatment = {
+  kind: "acupuncture" | "herbal";
+  name: string;
+  traditionalUse: string;
+  whyForYou: string;
+  caution?: string;
+};
+
+export type PatternDeepDive = {
+  patternId: string;
+  name: string;
+  role: PatternRole;
+  confidence: Confidence;
+  plainLanguageSummary: string;
+  yourEvidence: { source: EvidenceSource; detail: string }[];
+  mechanism: string;
+  howYourTongueShowsIt: { zone: string; sign: string; explanation: string }[];
+  bodyGeography: { area: string; system: string; explanation: string }[];
+  whyItFeelsThisWay: string;
+  whyItDevelops: string[];
+  dailyLifeConsiderations: { theme: string; actions: { action: string; why: string }[] }[];
+  foodTherapy: { food: string; why: string }[];
+  traditionalTreatments: TraditionalTreatment[];
+  whatToObserve: string[];
+  goDeeper: { title: string; body: string }[];
+  citations: string[];
+  isFallback: boolean;
+};
+
+export type FeatureDifferential = {
+  feature: string;
+  observed: string;
+  possibleReadings: string[];
+  photoCaveat: string;
+};
+
+export type DetailedReport = {
+  summaryCard: {
+    presentation: string;
+    coreImbalance: string;
+    topActions: string[];
+  };
+  coreStory: { title: string; body: string };
+  featureDifferentials: FeatureDifferential[];
+  deepDives: PatternDeepDive[];
+  howPatternsRelate: string;
+  setAside: { pattern: string; reason: string }[];
+  rootAndBranchPlan: { calmTheBranches: string[]; strengthenTheRoot: string[] };
+  redFlags: string[];
+  glossary: { term: string; definition: string }[];
+};
+
 export type DiagnosisReport = {
   features: TongueFeatures;
   patterns: PatternFinding[];
@@ -64,6 +120,7 @@ export type DiagnosisReport = {
   limitations: string[];
   summary: string;
   disclaimer: string;
+  detailed?: DetailedReport;
 };
 
 export type AssessmentSession = {

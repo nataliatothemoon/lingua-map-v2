@@ -92,6 +92,7 @@ export default function AssessPage() {
           features: analysis.features,
           intake,
           followUpAnswers,
+          followUpQuestions: analysis.followUpQuestions,
         }),
       });
       const json = await res.json();
@@ -196,7 +197,10 @@ export default function AssessPage() {
       {step === "synthesizing" && (
         <div className="rounded-3xl border border-[var(--line)] bg-white/80 p-10 text-center">
           <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--accent)]" />
-          <p className="mt-4 text-sm text-[var(--ink-muted)]">Synthesizing your educational tongue map…</p>
+          <p className="mt-4 text-sm text-[var(--ink-muted)]">
+            Writing your detailed report: first the overall picture, then a deep dive into each pattern.
+          </p>
+          <p className="mt-1 text-xs text-[var(--ink-muted)]">This usually takes 30 to 60 seconds.</p>
         </div>
       )}
     </main>

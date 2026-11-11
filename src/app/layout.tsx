@@ -30,7 +30,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${display.variable} ${body.variable} antialiased`}>
         <div className="mx-auto min-h-screen w-full max-w-5xl px-4 pb-16 pt-6 sm:px-6">
-          <header className="mb-8 flex items-center justify-between gap-4">
+          <header className="no-print mb-8 flex items-center justify-between gap-4">
             <Link href="/" className="font-[family-name:var(--font-display)] text-xl tracking-tight text-[var(--ink)]">
               Lingua Map
             </Link>

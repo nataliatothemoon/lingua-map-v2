@@ -1,37 +1,23 @@
 import { NextResponse } from "next/server";
 import { enforceRateLimit, jsonError } from "@/lib/api";
-import { getOpenAI, VISION_MODEL } from "@/lib/openai";
-import {
-  DISCLAIMER,
-  FEATURE_MAPPINGS,
-  KNOWLEDGE_PROMPT_BLOCK,
-  SOURCE_ATTRIBUTIONS,
-} from "@/lib/tcm/tongue-knowledge";
+import { runDeepDive } from "@/lib/report/deep-dive";
+import { runSynthesis } from "@/lib/report/synthesis";
+import { GLOSSARY, RED_FLAGS } from "@/lib/tcm/patterns";
+import { DISCLAIMER } from "@/lib/tcm/tongue-knowledge";
 import type {
-  Confidence,
+  DetailedReport,
   DiagnosisReport,
+  FollowUpQuestion,
   IntakeAnswers,
-  PatternFinding,
   TongueFeatures,
 } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
-function normalizePatterns(raw: unknown): PatternFinding[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 5).map((item) => {
-    const p = item as Partial<PatternFinding>;
-    const confidence = (["low", "medium", "high"].includes(String(p.confidence))
-      ? p.confidence
-      : "low") as Confidence;
-    return {
-      name: String(p.name || "Uncertain pattern"),
-      confidence,
-      rationale: String(p.rationale || ""),
-      citations: Array.isArray(p.citations) ? p.citations.map(String) : [],
-    };
-  });
+function glossaryFor(report: Omit<DetailedReport, "glossary">) {
+  const text = JSON.stringify(report).toLowerCase();
+  return GLOSSARY.filter((g) => new RegExp(`\\b${g.term.toLowerCase()}\\b`).test(text));
 }
 
 export async function POST(request: Request) {
@@ -49,87 +35,62 @@ export async function POST(request: Request) {
     features?: TongueFeatures;
     intake?: IntakeAnswers;
     followUpAnswers?: Record<string, string>;
+    followUpQuestions?: FollowUpQuestion[];
   };
 
   if (!payload.features || !payload.intake) {
     return jsonError("features and intake are required");
   }
 
+  const answers = payload.followUpAnswers || {};
+  const followUps = (payload.followUpQuestions || []).map((q) => ({
+    question: q.question,
+    answer: answers[q.id] ?? "not answered",
+  }));
+
+  const userInput = JSON.stringify({
+    tongueFeatures: payload.features,
+    intake: payload.intake,
+    followUps: followUps.length ? followUps : answers,
+  });
+
   try {
-    const openai = getOpenAI();
-    const mappingHints = FEATURE_MAPPINGS.map(
-      (m) => `- ${m.signs.join(", ")} → ${m.patterns.join("; ")} [${m.citations.join("; ")}]`,
-    ).join("\n");
+    const synthesis = await runSynthesis(userInput);
+    if (!synthesis.patterns.length) {
+      return jsonError("We couldn't identify a clear pattern from this photo and these answers. Please try again.", 422);
+    }
 
-    const completion = await openai.chat.completions.create({
-      model: VISION_MODEL,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `${KNOWLEDGE_PROMPT_BLOCK}
+    const deepDives = await Promise.all(
+      synthesis.patterns.map((pattern) => runDeepDive(pattern, synthesis, userInput)),
+    );
 
-Synthesize an educational TCM-inspired tongue + inquiry report.
-Return ONLY JSON:
-{
-  "features": <echo refined features object>,
-  "patterns": [{ "name": string, "confidence": "low"|"medium"|"high", "rationale": string, "citations": string[] }],
-  "lifestyleSuggestions": string[],
-  "limitations": string[],
-  "summary": string,
-  "disclaimer": string
-}
-
-Rules:
-- 1 to 4 patterns max; prefer fewer high-quality suggestions.
-- lifestyleSuggestions: gentle, non-prescriptive (sleep, meals, warmth/cool balance, hydration, stress hygiene). NO herbs, supplements dosing, acupuncture points, or drugs.
-- If tongue and intake conflict, lower confidence and explain in limitations.
-- citations must be short source labels from reputable TCM teaching references (not URLs required).
-- disclaimer must include that this is not medical/TCM clinical diagnosis.
-Sources: ${SOURCE_ATTRIBUTIONS.join(" | ")}
-Mapping hints:
-${mappingHints}
-Canonical disclaimer: ${DISCLAIMER}`,
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            features: payload.features,
-            intake: payload.intake,
-            followUpAnswers: payload.followUpAnswers || {},
-          }),
-        },
-      ],
-      temperature: 0.3,
-    });
-
-    const raw = completion.choices[0]?.message?.content || "{}";
-    const parsed = JSON.parse(raw) as Partial<DiagnosisReport>;
+    const detailedWithoutGlossary = {
+      summaryCard: synthesis.summaryCard,
+      coreStory: synthesis.coreStory,
+      featureDifferentials: synthesis.featureDifferentials,
+      deepDives,
+      howPatternsRelate: synthesis.howPatternsRelate,
+      setAside: synthesis.setAside,
+      rootAndBranchPlan: synthesis.rootAndBranchPlan,
+      redFlags: RED_FLAGS,
+    };
 
     const report: DiagnosisReport = {
       features: payload.features,
-      patterns: normalizePatterns(parsed.patterns),
-      lifestyleSuggestions: Array.isArray(parsed.lifestyleSuggestions)
-        ? parsed.lifestyleSuggestions.map(String).slice(0, 8)
-        : [],
-      limitations: Array.isArray(parsed.limitations)
-        ? parsed.limitations.map(String).slice(0, 8)
+      patterns: synthesis.patterns.map((p, i) => ({
+        name: p.displayName,
+        confidence: p.confidence,
+        rationale: p.rationale,
+        citations: deepDives[i]?.citations ?? [],
+      })),
+      lifestyleSuggestions: synthesis.summaryCard.topActions,
+      limitations: synthesis.limitations.length
+        ? synthesis.limitations
         : ["Tongue photos and questionnaires cannot replace in-person pulse and full clinical intake."],
-      summary: String(parsed.summary || "Educational tongue map summary based on photo and intake."),
-      disclaimer: String(parsed.disclaimer || DISCLAIMER),
+      summary: synthesis.summaryCard.coreImbalance,
+      disclaimer: DISCLAIMER,
+      detailed: { ...detailedWithoutGlossary, glossary: glossaryFor(detailedWithoutGlossary) },
     };
-
-    if (!report.patterns.length) {
-      report.patterns = [
-        {
-          name: "Insufficient certainty for a clear pattern suggestion",
-          confidence: "low",
-          rationale:
-            "Visible signs and intake answers did not converge strongly enough for a confident educational pattern label.",
-          citations: ["Standard TCM teaching — pattern differentiation requires multi-method inquiry"],
-        },
-      ];
-    }
 
     return NextResponse.json(report);
   } catch (error) {
